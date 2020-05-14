@@ -1,0 +1,67 @@
+---
+title: "Sample Epimodel"
+author: "Duong Ngo"
+date: "5/14/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+To build an compartment based epimodel in R, the first part is to divide the target population group into the categories we try to model. Once the groups are identified there are three main parts we need to specify:  
+a) A set of differential equations modeling the rate of change in each group
+b) A set of flow equations demonstrating the interaction between population group (the increase/ decrease of the population group in the orginial equations must be consistent with the overall population)  
+c) The parameters for the model  
+In the following example, we would try to build a model based on the SEIR criteria with 4 population group  
+
+Creating a function for population group and the specify the flow equations (http://statnet.org/tut/NewDCMs.html).
+```{r, include=FALSE}
+library(EpiModel)
+```
+
+```{r}
+# t0 is the intial time for the model, t is the time we try to predict
+SEIR <- function(t, t0, parms) {
+  with(as.list(c(t0, parms)), {
+    
+    # Population size
+    num <- s.num + e.num + i.num + r.num
+    
+    # Effective contact rate and FOI from a rearrangement of Beta * c * D
+    #R_0 is the initial reproductive number, available in almost every epimodel paper
+    #lambda is the contact rate of individuals
+    ce <- R0 / i.dur
+    lambda <- ce * i.num/num
+  
+    dS <- -lambda*s.num
+    dE <- lambda*s.num - (1/e.dur)*e.num
+    dI <- (1/e.dur)*e.num - (1 - cfr)*(1/i.dur)*i.num - cfr*(1/i.dur)*i.num
+    dR <- (1 - cfr)*(1/i.dur)*i.num
+    
+    #Creating a vector for follow
+    list(c(dS, dE, dI, dR, 
+           se.flow = lambda * s.num,
+           ei.flow = (1/e.dur) * e.num,
+           ir.flow = (1 - cfr)*(1/i.dur) * i.num,
+           d.flow = cfr*(1/i.dur)*i.num),
+         num = num,
+         i.prev = i.num / num,
+         ei.prev = (e.num + i.num)/num)
+  })
+}
+```
+Once the set of differential equations are specified, we can run our simulation provided the given parameters as follow
+```{r}
+param <- param.dcm(R0 = 1.9, e.dur = 10, i.dur = 14, cfr = c(0.5, 0.7, 0.9))
+init <- init.dcm(s.num = 1e6, e.num = 10, i.num = 0, r.num = 0,
+                 se.flow = 0, ei.flow = 0, ir.flow = 0, d.flow = 0)
+control <- control.dcm(nsteps = 500, dt = 1, new.mod = SEIR)
+mod <- dcm(param, init, control)
+mod
+```
+Plotting the result
+```{r}
+par(mfrow = c(1, 2))
+plot(mod, y = "i.num", main = "Number Infected")
+plot(mod, y = "i.prev", main = "Percent Infected", ylim = c(0, 0.5), legend = "full")
+```
